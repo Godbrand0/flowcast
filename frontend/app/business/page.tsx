@@ -1,24 +1,23 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import { CreateStreamForm } from "@/components/business/CreateStreamForm";
+import { RefreshButton } from "@/components/RefreshButton";
 import { StreamRow } from "@/components/business/StreamRow";
 import { VaultPanel } from "@/components/business/VaultPanel";
+import { useBusinessContext } from "@/lib/business-context";
 import { StreamStatus } from "@/lib/contracts";
 import { useStreams } from "@/lib/hooks";
+import { useRecipients } from "@/lib/hooks-recipients";
 import { usdcToNumber } from "@/lib/stream-math";
 
 export default function BusinessDashboard() {
-  const { address, isConnected } = useAccount();
+  const { address } = useAccount();
   const { streams, isLoading, refetch } = useStreams("business", address);
-
-  if (!isConnected) {
-    return (
-      <div className="mx-auto max-w-6xl px-4 py-24 text-center text-muted">
-        Connect your wallet to manage your vault and streams.
-      </div>
-    );
-  }
+  const { business } = useBusinessContext();
+  const { recipients } = useRecipients(business?.id);
+  const prefillRecipient = useSearchParams().get("recipient") ?? undefined;
 
   const active = streams.filter((s) => s.status === StreamStatus.Active);
   const monthlyBurn = active.reduce(
@@ -28,7 +27,10 @@ export default function BusinessDashboard() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold">Business Dashboard</h1>
+      <div className="mb-6 flex items-center gap-2">
+        <h1 className="text-2xl font-bold">Business Dashboard</h1>
+        <RefreshButton onRefresh={refetch} />
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
@@ -59,7 +61,11 @@ export default function BusinessDashboard() {
           </div>
         </div>
 
-        <CreateStreamForm onCreated={refetch} />
+        <CreateStreamForm
+          onCreated={refetch}
+          recipients={recipients}
+          initialRecipient={prefillRecipient}
+        />
       </div>
     </div>
   );

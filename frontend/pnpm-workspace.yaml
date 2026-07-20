@@ -1,6 +1,8 @@
 onlyBuiltDependencies:
   - sharp
+  - protobufjs
 ignoredBuiltDependencies:
   - unrs-resolver
 allowBuilds:
+  protobufjs: true
   sharp: true

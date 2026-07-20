@@ -1,42 +1,66 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePublicClient, useWriteContract } from "wagmi";
 import { isAddress } from "viem";
 import { streamVaultAbi } from "@/lib/abi/streamVault";
 import { STREAM_VAULT_ADDRESS } from "@/lib/contracts";
 import { formatUsdc, parseUsdc } from "@/lib/stream-math";
+import type { Recipient } from "@/lib/types";
 
-export function CreateStreamForm({ onCreated }: { onCreated: () => void }) {
+type DurationUnit = "minutes" | "hours" | "days";
+
+const UNIT_SECONDS: Record<DurationUnit, number> = {
+  minutes: 60,
+  hours: 3_600,
+  days: 86_400,
+};
+
+export function CreateStreamForm({
+  onCreated,
+  recipients = [],
+  initialRecipient,
+}: {
+  onCreated: () => void;
+  recipients?: Recipient[];
+  initialRecipient?: string;
+}) {
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
 
-  const [recipient, setRecipient] = useState("");
+  const [useDirectory, setUseDirectory] = useState(recipients.length > 0);
+  const [recipient, setRecipient] = useState(initialRecipient ?? "");
+
+  useEffect(() => {
+    if (initialRecipient) setRecipient(initialRecipient);
+  }, [initialRecipient]);
   const [amount, setAmount] = useState("");
-  const [days, setDays] = useState("30");
+  const [duration, setDuration] = useState("30");
+  const [unit, setUnit] = useState<DurationUnit>("days");
   const [cancelable, setCancelable] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const parsedAmount = parseUsdc(amount);
-  const parsedDays = Number(days);
+  const parsedDuration = Number(duration);
+  const durationSeconds = Math.floor(parsedDuration * UNIT_SECONDS[unit]);
   const valid =
     isAddress(recipient) &&
     parsedAmount !== null &&
     parsedAmount > 0n &&
-    Number.isFinite(parsedDays) &&
-    parsedDays > 0;
+    Number.isFinite(parsedDuration) &&
+    parsedDuration > 0 &&
+    durationSeconds > 0;
 
   const ratePerSecond =
-    valid && parsedAmount ? parsedAmount / BigInt(Math.floor(parsedDays * 86_400)) : 0n;
+    valid && parsedAmount ? parsedAmount / BigInt(durationSeconds) : 0n;
 
   async function submit() {
     if (!valid || !publicClient || parsedAmount === null) return;
     setBusy(true);
     setError(null);
     try {
-      const endTime =
-        Math.floor(Date.now() / 1000) + Math.floor(parsedDays * 86_400);
+      const endTime = Math.floor(Date.now() / 1000) + durationSeconds;
       const hash = await writeContractAsync({
         address: STREAM_VAULT_ADDRESS,
         abi: streamVaultAbi,
@@ -58,13 +82,52 @@ export function CreateStreamForm({ onCreated }: { onCreated: () => void }) {
     <div className="rounded-xl border border-border bg-surface p-6">
       <h2 className="mb-4 text-lg font-semibold">New Stream</h2>
 
-      <label className="mb-1 block text-sm font-medium">Recipient wallet</label>
-      <input
-        value={recipient}
-        onChange={(e) => setRecipient(e.target.value)}
-        placeholder="0x…"
-        className="amount mb-3 w-full rounded-lg border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
-      />
+      <div className="mb-1 flex items-center justify-between">
+        <label className="block text-sm font-medium">Recipient</label>
+        {recipients.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setUseDirectory((v) => !v)}
+            className="text-xs text-primary hover:underline"
+          >
+            {useDirectory ? "paste an address instead" : "choose from team"}
+          </button>
+        )}
+      </div>
+      {useDirectory && recipients.length > 0 ? (
+        <>
+          <select
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            className="mb-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
+          >
+            <option value="">Select from your team…</option>
+            {recipients.map((r) => (
+              <option
+                key={r.id}
+                value={r.wallet_address ?? r.id}
+                disabled={!r.wallet_address}
+              >
+                {r.full_name || r.email}
+                {!r.wallet_address ? " — invite pending, no wallet yet" : ""}
+              </option>
+            ))}
+          </select>
+          {recipients.some((r) => !r.wallet_address) && (
+            <p className="mb-3 text-xs text-muted">
+              Grayed-out names haven&apos;t accepted their invite yet — they
+              don&apos;t have a wallet to stream to until they do.
+            </p>
+          )}
+        </>
+      ) : (
+        <input
+          value={recipient}
+          onChange={(e) => setRecipient(e.target.value)}
+          placeholder="0x…"
+          className="amount mb-3 w-full rounded-lg border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
+        />
+      )}
 
       <div className="mb-3 flex gap-3">
         <div className="flex-1">
@@ -76,13 +139,24 @@ export function CreateStreamForm({ onCreated }: { onCreated: () => void }) {
             className="amount w-full rounded-lg border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
           />
         </div>
-        <div className="w-28">
-          <label className="mb-1 block text-sm font-medium">Days</label>
-          <input
-            value={days}
-            onChange={(e) => setDays(e.target.value)}
-            className="amount w-full rounded-lg border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none"
-          />
+        <div className="w-36">
+          <label className="mb-1 block text-sm font-medium">Duration</label>
+          <div className="flex gap-1">
+            <input
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              className="amount w-full min-w-0 rounded-lg border border-border px-2 py-2 text-sm focus:border-primary focus:outline-none"
+            />
+            <select
+              value={unit}
+              onChange={(e) => setUnit(e.target.value as DurationUnit)}
+              className="rounded-lg border border-border px-1 py-2 text-sm focus:border-primary focus:outline-none"
+            >
+              <option value="minutes">min</option>
+              <option value="hours">hrs</option>
+              <option value="days">days</option>
+            </select>
+          </div>
         </div>
       </div>
 

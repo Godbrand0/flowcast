@@ -16,7 +16,7 @@ export function useNow(intervalMs = 1000): number {
   return now;
 }
 
-const REFETCH_MS = 15_000;
+const REFETCH_MS = 5_000;
 
 /** All streams where `address` is the business (or the recipient). */
 export function useStreams(role: "business" | "recipient", address?: Address) {

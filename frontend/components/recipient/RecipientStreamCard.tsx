@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { usePublicClient, useWriteContract } from "wagmi";
 import { streamVaultAbi } from "@/lib/abi/streamVault";
+import { executeCircleChallenge } from "@/lib/circle-wallets-client";
 import { STREAM_VAULT_ADDRESS, Stream, StreamStatus } from "@/lib/contracts";
 import { useNow } from "@/lib/hooks";
 import {
@@ -19,9 +21,14 @@ import {
 export function RecipientStreamCard({
   stream,
   onChanged,
+  circleAccessToken,
 }: {
   stream: Stream & { id: bigint };
   onChanged: () => void;
+  /** Present when the recipient signed in via Google + Circle wallet instead
+   *  of connecting a wallet directly — routes withdraw through Circle's PIN
+   *  challenge instead of a wagmi signature. */
+  circleAccessToken?: string;
 }) {
   const now = useNow();
   const publicClient = usePublicClient();
@@ -37,17 +44,31 @@ export function RecipientStreamCard({
     stream.status === StreamStatus.Cancelled;
 
   async function withdraw() {
-    if (!publicClient) return;
     setBusy(true);
     setError(null);
     try {
-      const hash = await writeContractAsync({
-        address: STREAM_VAULT_ADDRESS,
-        abi: streamVaultAbi,
-        functionName: "withdraw",
-        args: [stream.id],
-      });
-      await publicClient.waitForTransactionReceipt({ hash });
+      if (circleAccessToken) {
+        const res = await fetch("/api/recipients/withdraw-challenge", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${circleAccessToken}`,
+          },
+          body: JSON.stringify({ streamId: stream.id.toString() }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Withdraw failed");
+        await executeCircleChallenge(data.challengeId, data.userToken, data.encryptionKey);
+      } else {
+        if (!publicClient) return;
+        const hash = await writeContractAsync({
+          address: STREAM_VAULT_ADDRESS,
+          abi: streamVaultAbi,
+          functionName: "withdraw",
+          args: [stream.id],
+        });
+        await publicClient.waitForTransactionReceipt({ hash });
+      }
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message.split("\n")[0] : "Transaction failed");
@@ -128,13 +149,12 @@ export function RecipientStreamCard({
           >
             {busy ? "Withdrawing…" : "Withdraw to Wallet"}
           </button>
-          <button
-            disabled
-            title="Bank offramp via Circle Payouts — coming soon"
-            className="flex-1 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-muted opacity-60"
+          <Link
+            href="/recipient/cashout"
+            className="flex-1 rounded-lg border border-border px-4 py-2.5 text-center text-sm font-medium hover:border-primary hover:text-primary"
           >
             Cash Out to Bank
-          </button>
+          </Link>
         </div>
       )}
       {error && <p className="mt-2 text-sm text-error">{error}</p>}

@@ -7,6 +7,7 @@ import {
   useReadContract,
   useWriteContract,
 } from "wagmi";
+import { RefreshButton } from "@/components/RefreshButton";
 import { erc20Abi } from "@/lib/abi/erc20";
 import { streamVaultAbi } from "@/lib/abi/streamVault";
 import { STREAM_VAULT_ADDRESS, USDC_ADDRESS } from "@/lib/contracts";
@@ -24,7 +25,7 @@ export function VaultPanel({ monthlyBurn }: { monthlyBurn: number }) {
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
-    query: { enabled: !!address, refetchInterval: 15_000 },
+    query: { enabled: !!address, refetchInterval: 5_000 },
   });
 
   const [amount, setAmount] = useState("");
@@ -82,9 +83,17 @@ export function VaultPanel({ monthlyBurn }: { monthlyBurn: number }) {
 
   return (
     <div className="rounded-xl border border-border bg-surface p-6">
-      <h2 className="mb-1 text-sm font-medium uppercase tracking-wide text-muted">
-        Vault Balance
-      </h2>
+      <div className="mb-1 flex items-center gap-2">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+          Vault Balance
+        </h2>
+        <RefreshButton
+          onRefresh={() => {
+            vault.refetch();
+            walletUsdc.refetch();
+          }}
+        />
+      </div>
       <div className="amount text-4xl font-bold">
         ${vault.data !== undefined ? formatUsdc(vault.data) : "—"}
         <span className="ml-2 text-base font-medium text-muted">USDC</span>
